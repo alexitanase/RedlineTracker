@@ -12,7 +12,7 @@
             "email": "alex.t@cobradevs.com"
         }
     ],
-    "minimum-stability": "dev",
+    "minimum-stability": "master",
     "require": {
         "php": ">=7.2.5"
     }
