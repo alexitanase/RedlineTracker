@@ -4,12 +4,15 @@
     "autoload": {
         "psr-4": {
             "Redline\\Tracker\\": "src/"
+        },
+        "psr-0": {
+            "Redline\\Tracker\\": "src/"
         }
     },
     "authors": [
         {
-            "name": "A.Iulian Tanase",
-            "email": "alex.t@cobradevs.com"
+            "name": "Iulian Alexandru Tanase",
+            "email": "alexandruiuliantanase@gmail.com"
         }
     ],
     "minimum-stability": "dev",
