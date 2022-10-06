@@ -1,6 +1,9 @@
 {
     "name": "redline/tracker",
     "description": "Redline Tracker Widget for Sports bet sites",
+    "type": "library",
+    "license": "proprietary",
+    "version": "0.0.1",
     "autoload": {
         "psr-4": {
             "Redline\\Tracker\\": "src/"
