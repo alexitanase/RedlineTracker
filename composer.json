@@ -1,0 +1,19 @@
+{
+    "name": "redline/tracker",
+    "description": "Redline Tracker Widget for Sports bet sites",
+    "autoload": {
+        "psr-4": {
+            "Redline\\Tracker\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "A.Iulian Tanase",
+            "email": "alex.t@cobradevs.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {
+        "php": ">=7.2.5"
+    }
+}
