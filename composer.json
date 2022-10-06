@@ -9,6 +9,11 @@
             "Redline\\Tracker\\": "src/"
         }
     },
+    "autoload-dev": {
+        "psr-4": {
+            "Redline\\Tracker\\": "src/"
+        }
+    },
     "authors": [
         {
             "name": "Iulian Alexandru Tanase",
