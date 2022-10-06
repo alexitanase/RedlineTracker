@@ -3,7 +3,7 @@
     "description": "Redline Tracker Widget for Sports bet sites",
     "type": "library",
     "license": "proprietary",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "autoload": {
         "psr-4": {
             "Redline\\Tracker\\": "src/"
@@ -20,7 +20,7 @@
             "email": "alexandruiuliantanase@gmail.com"
         }
     ],
-    "minimum-stability": "dev",
+    "minimum-stability": "alpha",
     "require": {
         "php": ">=7.2.5"
     }
