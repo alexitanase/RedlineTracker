@@ -6,6 +6,8 @@ abstract class AbstractClientAdapter implements ClientAdapterInterface {
     
     protected $Partner = '';
     protected $Structure = '';
+    protected $Options = [];
+    protected $MediaPath = __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'Media'.DIRECTORY_SEPARATOR;
 
     public function setPartner(string $name) {
         $this->Partner = $name;
@@ -23,12 +25,17 @@ abstract class AbstractClientAdapter implements ClientAdapterInterface {
         return $this->Structure;
     }
     
+    public function setOption(string $name, $value){
+        $this->Options[$name] = $value;
+    }
+    
     protected function getOptions(): array {
         $base = [
-            "%PARTNER_NAME%" =>     $this->Partner,
-            "%STRUCTURE_NAME%" =>   $this->Structure
+            "%PARTNER_NAME%"    => $this->Partner,
+            "%STRUCTURE_NAME%"  => $this->Structure
         ];
-        return $base;
+        $allOptions = [$base, ...$this->Options];
+        return $allOptions;
     }
     
 }
