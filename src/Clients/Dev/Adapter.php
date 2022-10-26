@@ -23,9 +23,5 @@ class Adapter extends AbstractClientAdapter {
         $javascript = str_replace(array_keys($to_replace), array_values($to_replace), $javascript);
         return $javascript;
     }
-
-    public function hellooow() {
-        return true;
-    }
     
 }
