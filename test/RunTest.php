@@ -10,5 +10,6 @@ $Adapter = $Factory->getInstance('Dev');
 if($Adapter!==null){
     $Adapter->setPartner('redline-demo');
     $Adapter->setStructure('demo');
+    $Adapter->setApiPath('http://localhost/');
     echo $Adapter->getJavascript();
 }else return '/* FILE NOT FOUND */';

@@ -7,24 +7,51 @@ class RLTracker extends Phaser.Scene {
 
     // Partner Details
     PartnerName = '%PARTNER_NAME%';
-    Structure = '%STRUCTURE_NAME%';
+    PartnerLogo = '%PARTNER_LOGO%';
+    Structure   = '%STRUCTURE_NAME%';
+
+    //API Server
+    APIPath     = '%API_PATH%';
+
+    //WebSocket Server
+    WebSocket   = "//127.0.0.1:8095/";
+    WSClient    = null;
+
+    //Media Server
+    MediaPath   = '//trkt.weibcon.com/';
 
     // Style colors
     WIDGET_COLORS = {
-        TEAM_HOME:      "#083FB5",
-        TEAM_HOME_FILL: 0x083FB5,
+        TEAM_HOME:      "#225772",
         TEAM_AWAY:      "#751357",
-        TEAM_AWAY_FILL: 0x751357,
-        TIMEBG:         0x004900,
+        HEADER_LINE:    "#DCDCDC",
+        TIMEBG:         "#004900",
         TIMEBG_TEXT:    "#00cb00",
-        TIMEBG_S2:      0x4597cb,
+        TIMEBG_S2:      "#4597cb",
         TIMEBG_TEXT_S2: "#FFFFFF",
-        TIMEBG_S3:      0x71350A,
+        TIMEBG_S3:      "#71350A",
         TIMEBG_TEXT_S3: "#FFFFFF",
-        TIMEBG_S4:      0x114174,
+        TIMEBG_S4:      "#114174",
         TIMEBG_TEXT_S4: "#FFFFFF",
         GENERIC_TEXT:   "#FFFFFF",
-        LIGHT_TEXT:     "#fff90d"
+        GENERIC_TEXT_2ND:"#b1b1b1",
+        LIGHT_TEXT:     "#fff90d",
+        TIMEBG_S6:      "#e16a11",
+        BALL_COLOR:     "#ffffff",
+        CHART_CIRCLE: {
+            TRACK:      "#225772",
+            BAR:        "#751357",
+            BG:         "#000000"
+        },
+        PROGRESS_BAR: {
+            BG:         "#751357",
+            LG:         "#225772"
+        },
+        IMPORTANT_MSG: {
+            BOX:        "#225772",
+            MIN:        "#751357",
+            TXT:        "#FFF",
+        }
     };
 
     WIDGET_FONT = "Geometos";
@@ -86,9 +113,17 @@ class RLTracker extends Phaser.Scene {
         Parts: {
             header: null
         },
+        ImportantMessage: [],
         Soccer: [],
         Hockey: [],
-        Basket: []
+        Basket: [],
+        Tennis: [],
+        Volley: [],
+        Animations: [],
+        Teams: {
+            Home: [],
+            Away: []
+        }
     };
 
     // Game Config
@@ -109,13 +144,10 @@ class RLTracker extends Phaser.Scene {
     GamePhaser = null;
     GameThis = null;
 
-    //Public Media
-    MediaPath = '//trkt.weibcon.com/';
-
     preload(){
         const self = this;
 
-        self.Elements.Loader.lbl = this.add.text(400, 300, '-', { fontSize: '26px', fill: '#fff', fontFamily: self.WIDGET_FONT });
+        self.Elements.Loader.lbl = this.add.text(400, 300, '-', { fontSize: '26px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
         let loader_position_w = self.Elements.Loader.lbl.width;
         self.Elements.Loader.lbl.setDepth(4).setPosition((400-loader_position_w), 300);
 
@@ -155,7 +187,13 @@ class RLTracker extends Phaser.Scene {
 
         //hockey
         this.load.image("scheme-hockey", this.MediaPath+"media/imgs/4.3/scheme_hockey_v2.png");
-        this.load.image("footer-hockey", this.MediaPath+"media/imgs/4.3/footer-hockey.png");
+        //this.load.image("footer-hockey", this.MediaPath+"media/imgs/4.3/footer-hockey.png");
+
+        //others
+        this.load.image("home-possession", this.MediaPath+"media/imgs/4.3/home-possession.png");
+        this.load.image("away-possession", this.MediaPath+"media/imgs/4.3/away-possession.png");
+        this.load.image("home-attack", this.MediaPath+"media/imgs/4.3/home-attack.png");
+        this.load.image("away-attack", this.MediaPath+"media/imgs/4.3/away-attack.png");
 
         //plugins
         this.load.plugin('rexcircularprogresscanvasplugin', this.MediaPath+'media/js/circular-progress.js', true);
@@ -163,6 +201,20 @@ class RLTracker extends Phaser.Scene {
 
     create(){
         this.GameThis = this;
+
+        //SOCCER BALL
+        if(this.Elements.Soccer.Ball == null){
+            this.Elements.Soccer.Ball = this.GameThis.add.circle(400, 302, 5, Phaser.Display.Color.HexStringToColor(this.WIDGET_COLORS.BALL_COLOR).color);
+            this.Elements.Soccer.Ball.setDepth(5).setVisible(false);
+            this.GameThis.tweens.add({
+                targets: this.Elements.Soccer.Ball,
+                scale: 0.75,
+                repeat: -1,
+                ease: 'Sine.easeInOut'
+            });
+        }
+        this.Elements.Soccer.BallLines = [this.GameThis.add.graphics()];
+
         this.eventExecutor();
     }
 
@@ -171,7 +223,7 @@ class RLTracker extends Phaser.Scene {
     }
 
     checkDependencies(){
-        if(typeof Phaser === 'undefined')return false;
+        if(typeof Phaser === 'undefined') return false;
         if(typeof io === 'undefined') return false;
         return true;
     }
@@ -210,30 +262,28 @@ class RLTracker extends Phaser.Scene {
         });
     }
 
-    async requestExecutor(type, data){
-        let Response;
+    requestExecutor(type){
         const self = this;
+        if(self.WSClient===null) return;
         switch (type){
+            case "CHECK_CLIENT":
+                self.WSClient.emit('verify_client', {
+                    Partner: self.PartnerName
+                });
+                break;
+            case "READY":
+                self.WSClient.emit('client_ready', {
+                    EventId: self.EventId
+                });
+                break;
             case "EVENT_DETAILS":
-                Response = await this.request({
-                    url: `http://redline.bo/widgets/tracker/${self.PartnerName}`,
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/x-www-form-urlencoded"
-                    },
-                    body: new URLSearchParams(data)
+                self.WSClient.emit('get_event_details', {
+                    EventId: self.EventId
                 });
                 break;
             default:
-                Response = {
-                    error: "Invalid operation type."
-                }
+                break;
         }
-        return Response;
-    }
-
-    eventUpdate(){
-
     }
 
     eventExecutor(){
@@ -242,6 +292,7 @@ class RLTracker extends Phaser.Scene {
             throw new DOMException("Event not found!");
         }
         self.buildPartsConstructor('BACKGROUND');
+        self.buildPartsConstructor('ANIMATIONS');
         switch (self.EventDetails.si){
             case 1:
                 self.buildPartsConstructor('HEADER');
@@ -269,6 +320,14 @@ class RLTracker extends Phaser.Scene {
                 self.buildPartsConstructor('TIME_TENNIS');
                 self.buildPartsConstructor('SCORE_TENNIS');
                 self.buildPartsConstructor('BODY_TENNIS');
+                self.buildPartsConstructor('FOOTER_TENNIS');
+                break;
+            case 6:
+                self.buildPartsConstructor('HEADER');
+                self.buildPartsConstructor('TIME_VOLLEY');
+                self.buildPartsConstructor('SCORE_VOLLEY');
+                self.buildPartsConstructor('BODY_VOLLEY');
+                self.buildPartsConstructor('FOOTER_VOLLEY');
                 break;
             default:
 
@@ -281,6 +340,65 @@ class RLTracker extends Phaser.Scene {
         let tablea_position_w = 0;
         let stats;
         switch (part){
+            case "ANIMATIONS":
+                try {
+                    if(self.Elements.Animations.length > 0){
+                        self.Elements.Animations.forEach(function(v,i){
+                            self.Elements.Animations[i].destroy();
+                        });
+                    }
+                    if(self.Elements.Teams.Home.length > 0){
+                        self.Elements.Teams.Home.forEach(function(v,i){
+                            self.Elements.Teams.Home[i].destroy();
+                        });
+                    }
+                    if(self.Elements.Teams.Away.length > 0){
+                        self.Elements.Teams.Away.forEach(function(v,i){
+                            self.Elements.Teams.Away[i].destroy();
+                        });
+                    }
+                }catch (e){}
+
+                let iam = 0;
+                self.Elements.Animations[iam] = self.GameThis.add.image(397, 302, "home-possession");
+                self.Elements.Animations[iam].setVisible(false).setDepth(5);
+                iam++;
+                self.Elements.Animations[iam] = self.GameThis.add.image(397, 302, "away-possession");
+                self.Elements.Animations[iam].setVisible(false).setDepth(5);
+                iam++;
+                self.Elements.Animations[iam] = self.GameThis.add.image(397, 302, "home-attack");
+                self.Elements.Animations[iam].setVisible(false).setDepth(5);
+                iam++;
+                self.Elements.Animations[iam] = self.GameThis.add.image(397, 302, "away-attack");
+                self.Elements.Animations[iam].setVisible(false).setDepth(5);
+
+                let ihmt = 0;
+                self.Elements.Teams.Home[ihmt] = self.GameThis.add.rectangle(380, 300, 10, 60, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.TEAM_HOME).color, 0.9);
+                self.Elements.Teams.Home[ihmt].setDepth(5).setVisible(false);
+                ihmt++;
+                let homeTeam = '';
+                if(homeTeam.length > 16) homeTeam = homeTeam.substr(0, 16)+'...';
+                self.Elements.Teams.Home[ihmt] = self.GameThis.add.text(370, 275, homeTeam, { fontSize: '22px', fill: self.WIDGET_COLORS.TEAM_HOME, fontFamily: self.WIDGET_FONT });
+                self.Elements.Teams.Home[ihmt].setPosition((370-self.Elements.Teams.Home[ihmt].width), 275);
+                self.Elements.Teams.Home[ihmt].setDepth(5).setVisible(false);
+                ihmt++;
+                self.Elements.Teams.Home[ihmt] = self.GameThis.add.text(370, 295, 'ACTION NAME', { fontSize: '26px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                self.Elements.Teams.Home[ihmt].setPosition((370-self.Elements.Teams.Home[ihmt].width), 295);
+                self.Elements.Teams.Home[ihmt].setDepth(5).setVisible(false);
+
+                let iamt = 0;
+                self.Elements.Teams.Away[iamt] = self.GameThis.add.rectangle(420, 300, 10, 60, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.TEAM_AWAY).color, 0.9);
+                self.Elements.Teams.Away[iamt].setDepth(5).setVisible(false);
+                iamt++;
+                let awayTeam = '';
+                if(awayTeam.length > 16) awayTeam = awayTeam.substr(0, 16)+'...';
+                self.Elements.Teams.Away[iamt] = self.GameThis.add.text(430, 275, awayTeam, { fontSize: '22px', fill: self.WIDGET_COLORS.TEAM_AWAY, fontFamily: self.WIDGET_FONT });
+                self.Elements.Teams.Away[iamt].setDepth(5).setVisible(false);
+                iamt++;
+                self.Elements.Teams.Away[iamt] = self.GameThis.add.text(430, 295, 'ACTION NAME', { fontSize: '26px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                self.Elements.Teams.Away[iamt].setDepth(5).setVisible(false);
+
+                break;
             case "BACKGROUND":
                 if(!this.WIDGET_OPTIONS.BACKGROUND_TRANSPARENT){
                     this.Elements.Parts.Background = this.add.image(400, 300, "background");
@@ -302,7 +420,7 @@ class RLTracker extends Phaser.Scene {
                     self.Elements.Parts.TeamHome.setText(textHomeName);
                 }else{
                     self.Elements.Parts.TeamHome = self.GameThis.add.text(0, 32, textHomeName, { fontSize: '22px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
-                    self.Elements.Parts.TeamHomeSubScore = self.GameThis.add.rectangle(365, 75, 50, 5, self.WIDGET_COLORS.TEAM_HOME_FILL, 0.9);
+                    self.Elements.Parts.TeamHomeSubScore = self.GameThis.add.rectangle(365, 75, 50, 5, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.TEAM_HOME).color, 0.9);
                 }
                 wPos = self.Elements.Parts.TeamHome.width;
                 self.Elements.Parts.TeamHome.setPosition((330-wPos), 32);
@@ -315,7 +433,7 @@ class RLTracker extends Phaser.Scene {
                     let splitName = textAwayName.split(' ');
                     textAwayName = "";
                     for(let x = 0; x < splitName.length; x++){
-                        textAwayName = textAwayName+(x === 0 ? '' : ' ')+splitName[x];
+                        if(x < 2) textAwayName = textAwayName+(x === 0 ? '' : ' ')+splitName[x];
                     }
                 }
 
@@ -323,14 +441,14 @@ class RLTracker extends Phaser.Scene {
                     self.Elements.Parts.TeamAway.setText(textAwayName);
                 }else{
                     self.Elements.Parts.TeamAway = self.GameThis.add.text(465, 32, textAwayName, { fontSize: '22px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
-                    self.Elements.Parts.TeamAwaySubScore = self.GameThis.add.rectangle(425, 75, 50, 5, self.WIDGET_COLORS.TEAM_AWAY_FILL, 0.9);
+                    self.Elements.Parts.TeamAwaySubScore = self.GameThis.add.rectangle(425, 75, 50, 5, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.TEAM_AWAY).color, 0.9);
                 }
                 self.Elements.Parts.TeamAway.setDepth(1);
                 self.Elements.Parts.TeamAwaySubScore.setDepth(1);
 
                 //Header line
                 if(self.WIDGET_OPTIONS.ENABLE_SPLITER && typeof self.Elements.Parts.HeaderSpliter === 'undefined'){
-                    self.Elements.Parts.HeaderSpliter = self.GameThis.add.rectangle(400, 78, 800, 1, 0xDCDCDC, 0.4);
+                    self.Elements.Parts.HeaderSpliter = self.GameThis.add.rectangle(400, 78, 800, 1, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.HEADER_LINE).color, 0.4);
                     self.Elements.Parts.HeaderSpliter.setDepth(1);
                 }
 
@@ -347,7 +465,11 @@ class RLTracker extends Phaser.Scene {
                 self.Elements.Parts.LeagueDetails.setDepth(1);
                 break;
             case "TIME":
-                self.Elements.Parts.TimeBox = self.GameThis.add.rectangle(400, 153, 150, 40, self.WIDGET_COLORS.TIMEBG, 0.85);
+                try {
+                    self.Elements.Parts.TimeBox.destroy();
+                    self.Elements.Parts.TimeText.destroy();
+                }catch (e){}
+                self.Elements.Parts.TimeBox = self.GameThis.add.rectangle(400, 153, 150, 40, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.TIMEBG).color, 0.85);
                 self.Elements.Parts.TimeBox.setDepth(5);
                 self.Elements.Parts.TimeText = self.GameThis.add.text(400, 140, self.labelCurrentTime(), { fontSize: '20px', fill: self.WIDGET_COLORS.TIMEBG_TEXT, fontFamily: self.WIDGET_FONT });
                 wPos = self.Elements.Parts.TimeText.width;
@@ -355,15 +477,23 @@ class RLTracker extends Phaser.Scene {
                 self.Elements.Parts.TimeText.setDepth(6);
                 break;
             case "TIME_HOCKEY":
-                self.Elements.Parts.TimeBox = self.GameThis.add.rectangle(400, 169, 100, 40, self.WIDGET_COLORS.TIMEBG_S2, 0.85);
+                try {
+                    self.Elements.Parts.TimeBox.destroy();
+                    self.Elements.Parts.TimeText.destroy();
+                }catch (e){}
+                self.Elements.Parts.TimeBox = self.GameThis.add.rectangle(400, 169, 100, 40, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.TIMEBG_S2).color, 0.85);
                 self.Elements.Parts.TimeBox.setDepth(5);
-                self.Elements.Parts.TimeText = self.GameThis.add.text(400, 155, self.labelCurrentTime(), { fontSize: '20px', fill: self.WIDGET_COLORS.TIMEBG_TEXT_S2, fontFamily: 'Geometos' });
+                self.Elements.Parts.TimeText = self.GameThis.add.text(400, 155, self.labelCurrentTime(), { fontSize: '20px', fill: self.WIDGET_COLORS.TIMEBG_TEXT_S2, fontFamily: self.WIDGET_FONT });
                 wPos = self.Elements.Parts.TimeText.width;
                 self.Elements.Parts.TimeText.setPosition((400-(wPos/2)), 155);
                 self.Elements.Parts.TimeText.setDepth(6);
                 break;
             case "TIME_BASKET":
-                self.Elements.Parts.TimeBox = self.GameThis.add.rectangle(400, 153, 150, 40, self.WIDGET_COLORS.TIMEBG_S3, 0.85);
+                try {
+                    self.Elements.Parts.TimeBox.destroy();
+                    self.Elements.Parts.TimeText.destroy();
+                }catch (e){}
+                self.Elements.Parts.TimeBox = self.GameThis.add.rectangle(400, 153, 150, 40, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.TIMEBG_S3).color, 0.85);
                 self.Elements.Parts.TimeBox.setDepth(5);
                 self.Elements.Parts.TimeText = self.GameThis.add.text(400, 140, self.labelCurrentTime(), { fontSize: '20px', fill: self.WIDGET_COLORS.TIMEBG_TEXT_S3, fontFamily: self.WIDGET_FONT });
                 wPos = self.Elements.Parts.TimeText.width;
@@ -371,7 +501,23 @@ class RLTracker extends Phaser.Scene {
                 self.Elements.Parts.TimeText.setDepth(6);
                 break;
             case "TIME_TENNIS":
-                self.Elements.Parts.TimeBox = self.GameThis.add.rectangle(400, 153, 150, 40, self.WIDGET_COLORS.TIMEBG_S4, 0.85);
+                try {
+                    self.Elements.Parts.TimeBox.destroy();
+                    self.Elements.Parts.TimeText.destroy();
+                }catch (e){}
+                self.Elements.Parts.TimeBox = self.GameThis.add.rectangle(400, 153, 150, 40, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.TIMEBG_S4).color, 0.85);
+                self.Elements.Parts.TimeBox.setDepth(5);
+                self.Elements.Parts.TimeText = self.GameThis.add.text(400, 140, self.labelCurrentTime(), { fontSize: '20px', fill: self.WIDGET_COLORS.TIMEBG_TEXT_S4, fontFamily: self.WIDGET_FONT });
+                wPos = self.Elements.Parts.TimeText.width;
+                self.Elements.Parts.TimeText.setPosition((400-(wPos/2)), 140);
+                self.Elements.Parts.TimeText.setDepth(6);
+                break;
+            case "TIME_VOLLEY":
+                try {
+                    self.Elements.Parts.TimeBox.destroy();
+                    self.Elements.Parts.TimeText.destroy();
+                }catch (e){}
+                self.Elements.Parts.TimeBox = self.GameThis.add.rectangle(400, 153, 150, 40, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.TIMEBG_S6), 0.85);
                 self.Elements.Parts.TimeBox.setDepth(5);
                 self.Elements.Parts.TimeText = self.GameThis.add.text(400, 140, self.labelCurrentTime(), { fontSize: '20px', fill: self.WIDGET_COLORS.TIMEBG_TEXT_S4, fontFamily: self.WIDGET_FONT });
                 wPos = self.Elements.Parts.TimeText.width;
@@ -379,6 +525,10 @@ class RLTracker extends Phaser.Scene {
                 self.Elements.Parts.TimeText.setDepth(6);
                 break;
             case "SCORE":
+                try {
+                    self.Elements.Parts.TeamHomeScore.destroy();
+                    self.Elements.Parts.TeamAwayScore.destroy();
+                }catch (e){}
                 let Score = self.EventDetails.esc.split(':');
                 //Home
                 self.Elements.Parts.TeamHomeScore = self.GameThis.add.text(365, 25, Score[0], { fontSize: '30px', fill: self.WIDGET_COLORS.LIGHT_TEXT, fontFamily: self.WIDGET_FONT });
@@ -393,6 +543,10 @@ class RLTracker extends Phaser.Scene {
                 self.Elements.Parts.TeamAwayScore.setDepth(1);
                 break;
             case "SCORE_TENNIS":
+                try {
+                    self.Elements.Parts.TeamHomeScore.destroy();
+                    self.Elements.Parts.TeamAwayScore.destroy();
+                }catch (e){}
                 let ScoreTennis = self.EventDetails.eas.split(':');
                 //Home
                 self.Elements.Parts.TeamHomeScore = self.GameThis.add.text(365, 25, ScoreTennis[0], { fontSize: '30px', fill: self.WIDGET_COLORS.LIGHT_TEXT, fontFamily: self.WIDGET_FONT });
@@ -406,35 +560,78 @@ class RLTracker extends Phaser.Scene {
                 self.Elements.Parts.TeamAwayScore.setPosition((423-(wPos/2)), 25);
                 self.Elements.Parts.TeamAwayScore.setDepth(1);
                 break;
+            case "SCORE_VOLLEY":
+                try {
+                    self.Elements.Parts.TeamHomeScore.destroy();
+                    self.Elements.Parts.TeamAwayScore.destroy();
+                }catch (e){}
+                let ScoreVolley = self.EventDetails.esc.split(':');
+                //Home
+                self.Elements.Parts.TeamHomeScore = self.GameThis.add.text(365, 25, ScoreVolley[0], { fontSize: '30px', fill: self.WIDGET_COLORS.LIGHT_TEXT, fontFamily: self.WIDGET_FONT });
+                wPos = self.Elements.Parts.TeamHomeScore.width;
+                self.Elements.Parts.TeamHomeScore.setPosition((365-(wPos/2)), 25);
+                self.Elements.Parts.TeamHomeScore.setDepth(1);
+
+                //Away
+                self.Elements.Parts.TeamAwayScore = self.GameThis.add.text(423, 25, ScoreVolley[1], { fontSize: '30px', fill: self.WIDGET_COLORS.LIGHT_TEXT, fontFamily: self.WIDGET_FONT });
+                wPos = self.Elements.Parts.TeamAwayScore.width;
+                self.Elements.Parts.TeamAwayScore.setPosition((423-(wPos/2)), 25);
+                self.Elements.Parts.TeamAwayScore.setDepth(1);
+                break;
             case "SCORE_CHANGED":
 
                 break;
             case "BODY_SOCCER":
+                try {
+                    self.Elements.Parts.Scene.destroy();
+                }catch (e){}
                 //BASIC GRAPHICS
                 self.Elements.Parts.Scene = self.GameThis.add.image(400, 300, "scheme-soccer");
                 self.Elements.Parts.Scene.setDepth(4);
                 break;
             case "BODY_HOCKEY":
+                try {
+                    self.Elements.Parts.Scene.destroy();
+                }catch (e){}
                 //BASIC GRAPHICS
                 self.Elements.Parts.Scene = self.GameThis.add.image(400, 300, "scheme-hockey");
                 self.Elements.Parts.Scene.setDepth(4);
                 break;
             case "BODY_TENNIS":
+                try {
+                    self.Elements.Parts.Scene.destroy();
+                }catch (e){}
                 //BASIC GRAPHICS
                 self.Elements.Parts.Scene = self.GameThis.add.image(400, 300, "scheme-tennis");
                 self.Elements.Parts.Scene.setDepth(4);
                 break;
             case "BODY_VOLLEY":
+                try {
+                    self.Elements.Parts.Scene.destroy();
+                }catch (e){}
                 //BASIC GRAPHICS
                 self.Elements.Parts.Scene = self.GameThis.add.image(400, 300, "scheme-volley");
                 self.Elements.Parts.Scene.setDepth(4);
                 break;
             case "BODY_BASKET":
+                try {
+                    self.Elements.Parts.Scene.destroy();
+                }catch (e){}
                 //BASIC GRAPHICS
                 self.Elements.Parts.Scene = self.GameThis.add.image(400, 300, "scheme-basketball");
                 self.Elements.Parts.Scene.setDepth(4);
                 break;
             case "FOOTER_SOCCER":
+                try {
+                    if(self.Elements.Soccer.length > 0){
+                        self.Elements.Soccer.forEach(function(v,i){
+                            self.Elements.Soccer[i].destroy();
+                        });
+                    }
+                }catch (e){}
+                try {
+                    self.Elements.Parts.FooterScene.destroy();
+                }catch (e){}
                 self.Elements.Parts.FooterScene = self.GameThis.add.image(400, 300, "footer-soccer");
                 self.Elements.Parts.FooterScene.setDepth(5);
 
@@ -495,13 +692,13 @@ class RLTracker extends Phaser.Scene {
                 var calcTotal = (parseInt(Possession_Percent[0])+parseInt(Possession_Percent[1]));
                 var calcHomePercet = (parseInt(Possession_Percent[0])/calcTotal*100);
                 var calcProgressHWidth = (150*(calcHomePercet/100));
-                self.Elements.Soccer[iv] = self.GameThis.add.rectangle(400, 505, 180, 15, 0x9b0951, 1);
+                self.Elements.Soccer[iv] = self.GameThis.add.rectangle(400, 505, 180, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.BG).color, 1);
                 iv++;
                 self.Elements.Soccer[iv] = self.GameThis.add.text(410, 480, 'Possession', { fontSize: '16px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
                 tablea_position_w = self.Elements.Soccer[iv].width;
                 self.Elements.Soccer[iv].setPosition((410-(tablea_position_w/2)), 480);
                 iv++;
-                self.Elements.Soccer[iv] = self.GameThis.add.rectangle(310+(calcProgressHWidth/2), 505, calcProgressHWidth, 15, 0x225772, 1);
+                self.Elements.Soccer[iv] = self.GameThis.add.rectangle(310+(calcProgressHWidth/2), 505, calcProgressHWidth, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.LG).color, 1);
                 iv++;
                 self.Elements.Soccer[iv] = self.GameThis.add.text(300, 496.5, Possession_Percent[0], { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
                 tablea_position_w = self.Elements.Soccer[iv].width;
@@ -513,13 +710,13 @@ class RLTracker extends Phaser.Scene {
                 calcTotal = (parseInt(Shot_On_Target[0])+parseInt(Shot_On_Target[1]));
                 calcHomePercet = (parseInt(Shot_On_Target[0])/calcTotal*100);
                 calcProgressHWidth = (150*(calcHomePercet/100));
-                self.Elements.Soccer[iv] = self.GameThis.add.rectangle(400, 540, 180, 15, 0x9b0951, 1);
+                self.Elements.Soccer[iv] = self.GameThis.add.rectangle(400, 540, 180, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.BG).color, 1);
                 iv++;
                 self.Elements.Soccer[iv] = self.GameThis.add.text(400, 515, 'Shots On Target', { fontSize: '16px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
                 tablea_position_w = self.Elements.Soccer[iv].width;
                 self.Elements.Soccer[iv].setPosition((400-(tablea_position_w/2)), 515);
                 iv++;
-                self.Elements.Soccer[iv] = self.GameThis.add.rectangle(310+(calcProgressHWidth/2), 540, calcProgressHWidth, 15, 0x225772, 1);
+                self.Elements.Soccer[iv] = self.GameThis.add.rectangle(310+(calcProgressHWidth/2), 540, calcProgressHWidth, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.LG).color, 1);
                 iv++;
                 self.Elements.Soccer[iv] = self.GameThis.add.text(300, 531.5, Shot_On_Target[0], { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
                 tablea_position_w = self.Elements.Soccer[iv].width;
@@ -531,13 +728,13 @@ class RLTracker extends Phaser.Scene {
                 calcTotal = (parseInt(Shot_Off_Target[0])+parseInt(Shot_Off_Target[1]));
                 calcHomePercet = (parseInt(Shot_Off_Target[0])/calcTotal*100);
                 calcProgressHWidth = (150*(calcHomePercet/100));
-                self.Elements.Soccer[iv] = self.GameThis.add.rectangle(400, 575, 180, 15, 0x9b0951, 1);
+                self.Elements.Soccer[iv] = self.GameThis.add.rectangle(400, 575, 180, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.BG).color, 1);
                 iv++;
                 self.Elements.Soccer[iv] = self.GameThis.add.text(400, 550, 'Shots Off Target', { fontSize: '16px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
                 tablea_position_w = self.Elements.Soccer[iv].width;
                 self.Elements.Soccer[iv].setPosition((400-(tablea_position_w/2)), 550);
                 iv++;
-                self.Elements.Soccer[iv] = self.GameThis.add.rectangle(310+(calcProgressHWidth/2), 575, calcProgressHWidth, 15, 0x225772, 1);
+                self.Elements.Soccer[iv] = self.GameThis.add.rectangle(310+(calcProgressHWidth/2), 575, calcProgressHWidth, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.LG).color, 1);
                 iv++;
                 self.Elements.Soccer[iv] = self.GameThis.add.text(300, 566.5, Shot_Off_Target[0], { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
                 tablea_position_w = self.Elements.Soccer[iv].width;
@@ -570,11 +767,11 @@ class RLTracker extends Phaser.Scene {
                     self.Elements.Soccer[iv] = self.GameThis.add.rexCircularProgressCanvas({
                         x: 100, y: 530,
                         radius: 30,
-                        trackColor: 0x225772,
-                        barColor: 0x9b0951,
-                        centerColor: 0x000000,
-                        textColor: 0x000000,
-                        textStrokeColor: 'black',
+                        trackColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.TRACK).color,
+                        barColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BAR).color,
+                        centerColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
+                        textColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
+                        textStrokeColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
                         textStrokeThickness: 3,
                         textSize: '30px',
                         textStyle: 'bold',
@@ -611,11 +808,11 @@ class RLTracker extends Phaser.Scene {
                     self.Elements.Soccer[iv] = self.GameThis.add.rexCircularProgressCanvas({
                         x: 700, y: 530,
                         radius: 30,
-                        trackColor: 0x225772,
-                        barColor: 0x9b0951,
-                        centerColor: 0x000000,
-                        textColor: 0x000000,
-                        textStrokeColor: 'black',
+                        trackColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.TRACK).color,
+                        barColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BAR).color,
+                        centerColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
+                        textColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
+                        textStrokeColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
                         textStrokeThickness: 3,
                         textSize: '30px',
                         textStyle: 'bold',
@@ -647,14 +844,31 @@ class RLTracker extends Phaser.Scene {
                 }
                 break;
             case "FOOTER_HOCKEY":
-                self.Elements.Parts.FooterScene = self.GameThis.add.image(400, 300, "footer-hockey");
-                self.Elements.Parts.FooterScene.setDepth(5);
+                try {
+                    if(self.Elements.Hockey.length > 0){
+                        self.Elements.Hockey.forEach(function(v,i){
+                            self.Elements.Hockey[i].destroy();
+                        });
+                    }
+                }catch (e){}
+                //self.Elements.Parts.FooterScene = self.GameThis.add.image(400, 300, "footer-hockey");
+                //self.Elements.Parts.FooterScene.setDepth(5);
                 let ih = 0;
-                self.Elements.Hockey[ih] = self.GameThis.add.text(57, 495, (parseInt(self.EventDetails.ecp) === 0 ? 'Ended' : self.EventDetails.ecp+" Period"), { fontSize: '18px', fill: '#b1b1b1', fontFamily: self.WIDGET_FONT });
+                self.Elements.Hockey[ih] = self.GameThis.add.text(57, 495, (parseInt(self.EventDetails.ecp) === 0 ? 'Ended' : self.EventDetails.ecp+" Period"), { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT_2ND, fontFamily: self.WIDGET_FONT });
                 ih++;
-                self.Elements.Hockey[ih] = self.GameThis.add.text(73, 528, self.EventDetails.th.name, { fontSize: '22px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                self.Elements.Hockey[ih] = self.GameThis.add.text(57, 528, self.EventDetails.th.name, { fontSize: '22px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
                 ih++;
-                self.Elements.Hockey[ih] = self.GameThis.add.text(73, 563, self.EventDetails.ta.name, { fontSize: '22px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                self.Elements.Hockey[ih] = self.GameThis.add.text(57, 563, self.EventDetails.ta.name, { fontSize: '22px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                ih++;
+
+                //TOP LABELS
+                self.Elements.Volley[ih] = self.GameThis.add.text(553, 495, "P1", { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT_2ND, fontFamily: self.WIDGET_FONT });
+                ih++;
+                self.Elements.Volley[ih] = self.GameThis.add.text(612, 495, "P2", { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT_2ND, fontFamily: self.WIDGET_FONT });
+                ih++;
+                self.Elements.Volley[ih] = self.GameThis.add.text(672, 495, "P3", { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT_2ND, fontFamily: self.WIDGET_FONT });
+                ih++;
+                self.Elements.Volley[ih] = self.GameThis.add.text(727, 495, "T", { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT_2ND, fontFamily: self.WIDGET_FONT });
                 ih++;
 
                 let scorePeriodHome = '0';
@@ -697,11 +911,18 @@ class RLTracker extends Phaser.Scene {
                 ih++;
 
                 let score = self.EventDetails.esc.split(':');
-                self.Elements.Hockey[ih] = self.GameThis.add.text(727, 530, score[0], { fontSize: '18px', fill: '#ffed24', fontFamily: self.WIDGET_FONT });
+                self.Elements.Hockey[ih] = self.GameThis.add.text(727, 530, score[0], { fontSize: '18px', fill: self.WIDGET_COLORS.LIGHT_TEXT, fontFamily: self.WIDGET_FONT });
                 ih++;
-                self.Elements.Hockey[ih] = self.GameThis.add.text(727, 565, score[1], { fontSize: '18px', fill: '#ffed24', fontFamily: self.WIDGET_FONT });
+                self.Elements.Hockey[ih] = self.GameThis.add.text(727, 565, score[1], { fontSize: '18px', fill: self.WIDGET_COLORS.LIGHT_TEXT, fontFamily: self.WIDGET_FONT });
                 break;
             case "FOOTER_BASKET":
+                try {
+                    if(self.Elements.Basket.length > 0){
+                        self.Elements.Basket.forEach(function(v,i){
+                            self.Elements.Basket[i].destroy();
+                        });
+                    }
+                }catch (e){}
                 let TwoPointersMade = [0,0];
                 let ThreePointersMade = [0,0];
                 let Fouls = [0,0];
@@ -742,13 +963,13 @@ class RLTracker extends Phaser.Scene {
                 let ib = 0;
                 calcHomePercet = (parseInt(TwoPointersMade[0])/calcTotal*100);
                 calcProgressHWidth = (150*(calcHomePercet/100));
-                self.Elements.Basket[ib] = self.GameThis.add.rectangle(400, 505, 180, 15, 0x9b0951, 1);
+                self.Elements.Basket[ib] = self.GameThis.add.rectangle(400, 505, 180, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.BG).color, 1);
                 ib++;
                 self.Elements.Basket[ib] = self.GameThis.add.text(400, 480, '2Pts goals', { fontSize: '16px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
                 tablea_position_w = self.Elements.Basket[ib].width;
                 self.Elements.Basket[ib].setPosition((400-(tablea_position_w/2)), 480);
                 ib++;
-                self.Elements.Basket[ib] = self.GameThis.add.rectangle(310+(calcProgressHWidth/2), 505, calcProgressHWidth, 15, 0x225772, 1);
+                self.Elements.Basket[ib] = self.GameThis.add.rectangle(310+(calcProgressHWidth/2), 505, calcProgressHWidth, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.LG).color, 1);
                 ib++;
                 self.Elements.Basket[ib] = self.GameThis.add.text(300, 496.5, TwoPointersMade[0], { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
                 tablea_position_w = self.Elements.Basket[ib].width;
@@ -759,13 +980,13 @@ class RLTracker extends Phaser.Scene {
                 calcTotal = (parseInt(ThreePointersMade[0])+parseInt(ThreePointersMade[1]));
                 calcHomePercet = (parseInt(ThreePointersMade[0])/calcTotal*100);
                 calcProgressHWidth = (150*(calcHomePercet/100));
-                self.Elements.Basket[ib] = self.GameThis.add.rectangle(400, 540, 180, 15, 0x9b0951, 1);
+                self.Elements.Basket[ib] = self.GameThis.add.rectangle(400, 540, 180, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.BG).color, 1);
                 ib++;
                 self.Elements.Basket[ib] = self.GameThis.add.text(400, 515, '3Pts goals', { fontSize: '16px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
                 tablea_position_w = self.Elements.Basket[ib].width;
                 self.Elements.Basket[ib].setPosition((400-(tablea_position_w/2)), 515);
                 ib++;
-                self.Elements.Basket[ib] = self.GameThis.add.rectangle(310+(calcProgressHWidth/2), 540, calcProgressHWidth, 15, 0x225772, 1);
+                self.Elements.Basket[ib] = self.GameThis.add.rectangle(310+(calcProgressHWidth/2), 540, calcProgressHWidth, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.LG).color, 1);
                 ib++;
                 self.Elements.Basket[ib] = self.GameThis.add.text(300, 531.5, ThreePointersMade[0], { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
                 tablea_position_w = self.Elements.Basket[ib].width;
@@ -776,13 +997,13 @@ class RLTracker extends Phaser.Scene {
                 calcTotal = (parseInt(Fouls[0])+parseInt(Fouls[1]));
                 calcHomePercet = (parseInt(Fouls[0])/calcTotal*100);
                 calcProgressHWidth = (150*(calcHomePercet/100));
-                self.Elements.Basket[ib] = self.GameThis.add.rectangle(400, 575, 180, 15, 0x9b0951, 1);
+                self.Elements.Basket[ib] = self.GameThis.add.rectangle(400, 575, 180, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.BG).color, 1);
                 ib++;
                 self.Elements.Basket[ib] = self.GameThis.add.text(400, 550, 'Faults', { fontSize: '16px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
                 tablea_position_w = self.Elements.Basket[ib].width;
                 self.Elements.Basket[ib].setPosition((400-(tablea_position_w/2)), 550);
                 ib++;
-                self.Elements.Basket[ib] = self.GameThis.add.rectangle(310+(calcProgressHWidth/2), 575, calcProgressHWidth, 15, 0x225772, 1);
+                self.Elements.Basket[ib] = self.GameThis.add.rectangle(310+(calcProgressHWidth/2), 575, calcProgressHWidth, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.LG).color, 1);
                 ib++;
                 self.Elements.Basket[ib] = self.GameThis.add.text(300, 566.5, Fouls[0], { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
                 tablea_position_w = self.Elements.Basket[ib].width;
@@ -797,14 +1018,11 @@ class RLTracker extends Phaser.Scene {
                     self.Elements.Basket[ib] = self.GameThis.add.rexCircularProgressCanvas({
                         x: 100, y: 530,
                         radius: 30,
-
-                        trackColor: 0x225772,
-                        barColor: 0x9b0951,
-                        centerColor: 0x000000,
-                        // anticlockwise: true,
-
-                        textColor: 0x000000,
-                        textStrokeColor: 'black',
+                        trackColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.TRACK).color,
+                        barColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BAR).color,
+                        centerColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
+                        textColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
+                        textStrokeColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
                         textStrokeThickness: 3,
                         textSize: '30px',
                         textStyle: 'bold',
@@ -841,14 +1059,11 @@ class RLTracker extends Phaser.Scene {
                     self.Elements.Basket[ib] = self.GameThis.add.rexCircularProgressCanvas({
                         x: 700, y: 530,
                         radius: 30,
-
-                        trackColor: 0x225772,
-                        barColor: 0x9b0951,
-                        centerColor: 0x000000,
-                        // anticlockwise: true,
-
-                        textColor: 0x000000,
-                        textStrokeColor: 'black',
+                        trackColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.TRACK).color,
+                        barColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BAR).color,
+                        centerColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
+                        textColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
+                        textStrokeColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
                         textStrokeThickness: 3,
                         textSize: '30px',
                         textStyle: 'bold',
@@ -879,6 +1094,287 @@ class RLTracker extends Phaser.Scene {
                     console.error(err);
                 }
                 break;
+            case "FOOTER_TENNIS":
+                try {
+                    if(self.Elements.Tennis.length > 0){
+                        self.Elements.Tennis.forEach(function(v,i){
+                            self.Elements.Tennis[i].destroy();
+                        });
+                    }
+                }catch (e){}
+                let AcesScore = [0,0];
+                let BreakScore = [0,0];
+                let FirstServeWinPercentage = [0,0];
+                let DoubleFaultScore = [0,0];
+                let BreakPointConversionPercentage = [0,0];
+                stats = Object.entries(self.EventDetails.ests);
+                if(stats.length > 0){
+                    for(let i = 0; i < stats.length; i++) {
+                        let key = stats[i][0];
+                        if(key === "ACES"){
+                            AcesScore = [
+                                stats[i][1].home,
+                                stats[i][1].away
+                            ]
+                        }else if(key === "BREAK_POINTS"){
+                            BreakPointConversionPercentage = [
+                                stats[i][1].home.replace('%', ''),
+                                stats[i][1].away.replace('%', '')
+                            ]
+                        }else if(key === "DOUBLE_FAULTS"){
+                            DoubleFaultScore = [
+                                stats[i][1].home,
+                                stats[i][1].away
+                            ]
+                        }else if(key === "WIN_FIRST_SERVE"){
+                            FirstServeWinPercentage = [
+                                stats[i][1].home.replace('%', ''),
+                                stats[i][1].away.replace('%', '')
+                            ]
+                        }
+                    }
+                }
+
+                let it = 0;
+                calcTotal = (parseInt(FirstServeWinPercentage[0])+parseInt(FirstServeWinPercentage[1]));
+                calcHomePercet = (parseInt(FirstServeWinPercentage[0])/calcTotal*100);
+                calcProgressHWidth = (150*(calcHomePercet/100));
+                self.Elements.Tennis[it] = self.GameThis.add.rectangle(400, 505, 180, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.BG).color, 1);
+                it++;
+                self.Elements.Tennis[it] = self.GameThis.add.text(410, 480, 'First Serve Win %', { fontSize: '16px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                tablea_position_w = self.Elements.Tennis[it].width;
+                self.Elements.Tennis[it].setPosition((410-(tablea_position_w/2)), 480);
+                it++;
+                self.Elements.Tennis[it] = self.GameThis.add.rectangle(310+(calcProgressHWidth/2), 505, calcProgressHWidth, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.LG).color, 1);
+                it++;
+                self.Elements.Tennis[it] = self.GameThis.add.text(300, 496.5, FirstServeWinPercentage[0], { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                tablea_position_w = self.Elements.Tennis[it].width;
+                self.Elements.Tennis[it].setPosition((300-tablea_position_w), 496.5);
+                it++;
+                self.Elements.Tennis[it] = self.GameThis.add.text(500, 496.5, FirstServeWinPercentage[1], { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                it++;
+                //CALC
+                calcTotal = (parseInt(DoubleFaultScore[0])+parseInt(DoubleFaultScore[1]));
+                calcHomePercet = (parseInt(DoubleFaultScore[0])/calcTotal*100);
+                calcProgressHWidth = (150*(calcHomePercet/100));
+                self.Elements.Tennis[it] = self.GameThis.add.rectangle(400, 540, 180, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.BG).color, 1);
+                it++;
+                self.Elements.Tennis[it] = self.GameThis.add.text(400, 515, 'Double Fault Score', { fontSize: '16px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                tablea_position_w = self.Elements.Tennis[it].width;
+                self.Elements.Tennis[it].setPosition((400-(tablea_position_w/2)), 515);
+                it++;
+                self.Elements.Tennis[it] = self.GameThis.add.rectangle(310+(calcProgressHWidth/2), 540, calcProgressHWidth, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.LG).color, 1);
+                it++;
+                self.Elements.Tennis[it] = self.GameThis.add.text(300, 531.5, DoubleFaultScore[0], { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                tablea_position_w = self.Elements.Tennis[it].width;
+                self.Elements.Tennis[it].setPosition((300-tablea_position_w), 531.5);
+                it++;
+                self.Elements.Tennis[it] = self.GameThis.add.text(500, 531.5, DoubleFaultScore[1], { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                it++;
+                //CALC
+                calcTotal = (parseInt(BreakPointConversionPercentage[0])+parseInt(BreakPointConversionPercentage[1]));
+                calcHomePercet = (parseInt(BreakPointConversionPercentage[0])/calcTotal*100);
+                calcProgressHWidth = (150*(calcHomePercet/100));
+                self.Elements.Tennis[it] = self.GameThis.add.rectangle(400, 575, 180, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.BG).color, 1);
+                it++;
+                self.Elements.Tennis[it] = self.GameThis.add.text(400, 550, 'Break Point Conversion %', { fontSize: '16px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                tablea_position_w = self.Elements.Tennis[it].width;
+                self.Elements.Tennis[it].setPosition((400-(tablea_position_w/2)), 550);
+                it++;
+                self.Elements.Tennis[it] = self.GameThis.add.rectangle(310+(calcProgressHWidth/2), 575, calcProgressHWidth, 15, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.PROGRESS_BAR.LG).color, 1);
+                it++;
+                self.Elements.Tennis[it] = self.GameThis.add.text(300, 566.5, BreakPointConversionPercentage[0], { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                tablea_position_w = self.Elements.Tennis[it].width;
+                self.Elements.Tennis[it].setPosition((300-tablea_position_w), 566.5);
+                it++;
+                self.Elements.Tennis[it] = self.GameThis.add.text(500, 566.5, BreakPointConversionPercentage[1], { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                it++;
+                try {
+                    calcTotal = (parseInt(AcesScore[0])+parseInt(AcesScore[1]));
+                    calcHomePercet = (parseInt(AcesScore[0])/calcTotal*100);
+                    calcProgressHWidth = (100*(calcHomePercet/100));
+                    self.Elements.Tennis[it] = self.GameThis.add.rexCircularProgressCanvas({
+                        x: 100, y: 530,
+                        radius: 30,
+                        trackColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.TRACK).color,
+                        barColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BAR).color,
+                        centerColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
+                        textColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
+                        textStrokeColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
+                        textStrokeThickness: 3,
+                        textSize: '30px',
+                        textStyle: 'bold',
+                        textFormatCallback: function (value) {
+                            return 0;
+                        },
+                        value: 0
+                    });
+
+                    self.GameThis.tweens.add({
+                        targets: self.Elements.Tennis[it],
+                        value: (1-(calcProgressHWidth/100)),
+                        duration: 2000,
+                        ease: 'Cubic',
+                    });
+                    it++;
+                    self.Elements.Tennis[it] = self.GameThis.add.text(100, 565, 'Aces Score', { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                    tablea_position_w = self.Elements.Tennis[it].width;
+                    self.Elements.Tennis[it].setPosition((100-(tablea_position_w/2)), 565);
+                    it++;
+                    self.Elements.Tennis[it] = self.GameThis.add.text(65, 522, AcesScore[0], { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                    tablea_position_w = self.Elements.Tennis[it].width;
+                    self.Elements.Tennis[it].setPosition((65-tablea_position_w), 522);
+                    it++;
+                    self.Elements.Tennis[it] = self.GameThis.add.text(135, 522, AcesScore[1], { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                    it++;
+                }catch(err){
+                    console.error(err);
+                }
+                try {
+                    calcTotal = (parseInt(BreakScore[0])+parseInt(BreakScore[1]));
+                    calcHomePercet = (parseInt(BreakScore[0])/calcTotal*100);
+                    calcProgressHWidth = (100*(calcHomePercet/100));
+                    self.Elements.Tennis[it] = self.GameThis.add.rexCircularProgressCanvas({
+                        x: 700, y: 530,
+                        radius: 30,
+                        trackColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.TRACK).color,
+                        barColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BAR).color,
+                        centerColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
+                        textColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
+                        textStrokeColor: Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.CHART_CIRCLE.BG).color,
+                        textStrokeThickness: 3,
+                        textSize: '30px',
+                        textStyle: 'bold',
+                        textFormatCallback: function (value) {
+                            return 0;
+                        },
+                        value: 0
+                    });
+
+                    self.GameThis.tweens.add({
+                        targets: self.Elements.Tennis[it],
+                        value: (1-(calcProgressHWidth/100)),
+                        duration: 2000,
+                        ease: 'Cubic',
+                    });
+                    it++;
+                    self.Elements.Tennis[it] = self.GameThis.add.text(705, 565, 'Break Score', { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                    tablea_position_w = self.Elements.Tennis[it].width;
+                    self.Elements.Tennis[it].setPosition((705-(tablea_position_w/2)), 565);
+                    it++;
+                    self.Elements.Tennis[it] = self.GameThis.add.text(665, 522, BreakScore[0], { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                    tablea_position_w = self.Elements.Tennis[it].width;
+                    self.Elements.Tennis[it].setPosition((665-tablea_position_w), 522);
+                    it++;
+                    self.Elements.Tennis[it] = self.GameThis.add.text(735, 522, BreakScore[1], { fontSize: '14px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                    it++;
+                }catch(err){
+                    console.error(err);
+                }
+                break;
+            case "FOOTER_VOLLEY":
+                try {
+                    if(self.Elements.Volley.length > 0){
+                        self.Elements.Volley.forEach(function(v,i){
+                            self.Elements.Volley[i].destroy();
+                        });
+                    }
+                }catch (e){}
+                //self.Elements.Parts.FooterScene = self.GameThis.add.image(400, 300, "footer-hockey");
+                //self.Elements.Parts.FooterScene.setDepth(5);
+                let ivl = 0;
+                self.Elements.Volley[ivl] = self.GameThis.add.text(57, 495, (parseInt(self.EventDetails.ecp) === 0 ? 'Ended' : self.EventDetails.ecp+" Set"), { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT_2ND, fontFamily: self.WIDGET_FONT });
+                ivl++;
+                self.Elements.Volley[ivl] = self.GameThis.add.text(57, 528, self.EventDetails.th.name, { fontSize: '22px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                ivl++;
+                self.Elements.Volley[ivl] = self.GameThis.add.text(57, 563, self.EventDetails.ta.name, { fontSize: '22px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                ivl++;
+
+                //TOP LABELS
+                self.Elements.Volley[ivl] = self.GameThis.add.text(435, 495, "S1", { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT_2ND, fontFamily: self.WIDGET_FONT });
+                ivl++;
+                self.Elements.Volley[ivl] = self.GameThis.add.text(494, 495, "S2", { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT_2ND, fontFamily: self.WIDGET_FONT });
+                ivl++;
+                self.Elements.Volley[ivl] = self.GameThis.add.text(553, 495, "S3", { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT_2ND, fontFamily: self.WIDGET_FONT });
+                ivl++;
+                self.Elements.Volley[ivl] = self.GameThis.add.text(612, 495, "S4", { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT_2ND, fontFamily: self.WIDGET_FONT });
+                ivl++;
+                self.Elements.Volley[ivl] = self.GameThis.add.text(672, 495, "S5", { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT_2ND, fontFamily: self.WIDGET_FONT });
+                ivl++;
+                self.Elements.Volley[ivl] = self.GameThis.add.text(727, 495, "T", { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT_2ND, fontFamily: self.WIDGET_FONT });
+                ivl++;
+
+                //SCORES
+                let scorePeriodHomeVolley = '0';
+                if(typeof self.EventDetails.etsc !== 'undefined'){
+                    if(typeof self.EventDetails.etsc[0] !== 'undefined') scorePeriodHomeVolley = self.EventDetails.etsc[0].split(':')[0];
+                }
+                self.Elements.Volley[ivl] = self.GameThis.add.text(435, 530, scorePeriodHomeVolley, { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                ivl++;
+                let scorePeriodAwayVolley = '0';
+                if(typeof self.EventDetails.etsc !== 'undefined'){
+                    if(typeof self.EventDetails.etsc[0] !== 'undefined') scorePeriodAwayVolley = self.EventDetails.etsc[0].split(':')[1];
+                }
+                self.Elements.Volley[ivl] = self.GameThis.add.text(435, 565, scorePeriodAwayVolley, { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                ivl++;
+
+                scorePeriodHomeVolley = '0';
+                if(typeof self.EventDetails.etsc !== 'undefined'){
+                    if(typeof self.EventDetails.etsc[1] !== 'undefined') scorePeriodHomeVolley = self.EventDetails.etsc[1].split(':')[0];
+                }
+                self.Elements.Volley[ivl] = self.GameThis.add.text(494, 530, scorePeriodHomeVolley, { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                ivl++;
+                scorePeriodAwayVolley = '0';
+                if(typeof self.EventDetails.etsc !== 'undefined'){
+                    if(typeof self.EventDetails.etsc[1] !== 'undefined') scorePeriodAwayVolley = self.EventDetails.etsc[1].split(':')[1];
+                }
+                self.Elements.Volley[ivl] = self.GameThis.add.text(494, 565, scorePeriodAwayVolley, { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                ivl++;
+
+                scorePeriodHomeVolley = '0';
+                if(typeof self.EventDetails.etsc !== 'undefined'){
+                    if(typeof self.EventDetails.etsc[2] !== 'undefined') scorePeriodHomeVolley = self.EventDetails.etsc[2].split(':')[0];
+                }
+                self.Elements.Volley[ivl] = self.GameThis.add.text(553, 530, scorePeriodHomeVolley, { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                ivl++;
+                scorePeriodAwayVolley = '0';
+                if(typeof self.EventDetails.etsc !== 'undefined'){
+                    if(typeof self.EventDetails.etsc[2] !== 'undefined') scorePeriodAwayVolley = self.EventDetails.etsc[2].split(':')[1];
+                }
+                self.Elements.Volley[ivl] = self.GameThis.add.text(553, 565, scorePeriodAwayVolley, { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                ivl++;
+
+                scorePeriodHomeVolley = '0';
+                if(typeof self.EventDetails.etsc !== 'undefined'){
+                    if(typeof self.EventDetails.etsc[3] !== 'undefined') scorePeriodHomeVolley = self.EventDetails.etsc[3].split(':')[0];
+                }
+                self.Elements.Volley[ivl] = self.GameThis.add.text(612, 530, scorePeriodHomeVolley, { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                ivl++;
+                scorePeriodAwayVolley = '0';
+                if(typeof self.EventDetails.etsc !== 'undefined'){
+                    if(typeof self.EventDetails.etsc[3] !== 'undefined') scorePeriodAwayVolley = self.EventDetails.etsc[3].split(':')[1];
+                }
+                self.Elements.Volley[ivl] = self.GameThis.add.text(612, 565, scorePeriodAwayVolley, { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                ivl++;
+
+                scorePeriodHomeVolley = '0';
+                if(typeof self.EventDetails.etsc !== 'undefined'){
+                    if(typeof self.EventDetails.etsc[4] !== 'undefined') scorePeriodHomeVolley = self.EventDetails.etsc[4].split(':')[0];
+                }
+                self.Elements.Volley[ivl] = self.GameThis.add.text(672, 530, scorePeriodHomeVolley, { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                ivl++;
+                scorePeriodAwayVolley = '0';
+                if(typeof self.EventDetails.etsc !== 'undefined'){
+                    if(typeof self.EventDetails.etsc[4] !== 'undefined') scorePeriodAwayVolley = self.EventDetails.etsc[4].split(':')[1];
+                }
+                self.Elements.Volley[ivl] = self.GameThis.add.text(672, 565, scorePeriodAwayVolley, { fontSize: '18px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                ivl++;
+
+                let scoreVolley = self.EventDetails.esc.split(':');
+                self.Elements.Volley[ivl] = self.GameThis.add.text(727, 530, scoreVolley[0], { fontSize: '18px', fill: self.WIDGET_COLORS.LIGHT_TEXT, fontFamily: self.WIDGET_FONT });
+                ivl++;
+                self.Elements.Volley[ivl] = self.GameThis.add.text(727, 565, scoreVolley[1], { fontSize: '18px', fill: self.WIDGET_COLORS.LIGHT_TEXT, fontFamily: self.WIDGET_FONT });
+                break;
             case "CLEAR":
                 try {
                     if(!self.WIDGET_OPTIONS.BACKGROUND_TRANSPARENT){
@@ -907,6 +1403,20 @@ class RLTracker extends Phaser.Scene {
                     }
                 }catch (e){}
                 try {
+                    if(self.Elements.Tennis.length > 0){
+                        self.Elements.Tennis.forEach(function(v,i){
+                            self.Elements.Tennis[i].destroy();
+                        });
+                    }
+                }catch (e){}
+                try {
+                    if(self.Elements.Volley.length > 0){
+                        self.Elements.Volley.forEach(function(v,i){
+                            self.Elements.Volley[i].destroy();
+                        });
+                    }
+                }catch (e){}
+                try {
                     self.Elements.Parts.Scene.destroy();
                 }catch (e){}
                 try {
@@ -919,6 +1429,23 @@ class RLTracker extends Phaser.Scene {
                 try {
                     self.Elements.Parts.TimeBox.destroy();
                     self.Elements.Parts.TimeText.destroy();
+                }catch (e){}
+                try {
+                    if(self.Elements.Animations.length > 0){
+                        self.Elements.Animations.forEach(function(v,i){
+                            self.Elements.Animations[i].destroy();
+                        });
+                    }
+                    if(self.Elements.Teams.Home.length > 0){
+                        self.Elements.Teams.Home.forEach(function(v,i){
+                            self.Elements.Teams.Home[i].destroy();
+                        });
+                    }
+                    if(self.Elements.Teams.Away.length > 0){
+                        self.Elements.Teams.Away.forEach(function(v,i){
+                            self.Elements.Teams.Away[i].destroy();
+                        });
+                    }
                 }catch (e){}
                 break;
         }
@@ -960,6 +1487,26 @@ class RLTracker extends Phaser.Scene {
                         }catch (e){}
                         self.buildPartsConstructor('FOOTER_BASKET');
                         break;
+                    case 4:
+                        try {
+                            if(self.Elements.Tennis.length > 0){
+                                self.Elements.Tennis.forEach(function(v,i){
+                                    self.Elements.Tennis[i].destroy();
+                                });
+                            }
+                        }catch (e){}
+                        self.buildPartsConstructor('FOOTER_TENNIS');
+                        break;
+                    case 6:
+                        try {
+                            if(self.Elements.Volley.length > 0){
+                                self.Elements.Volley.forEach(function(v,i){
+                                    self.Elements.Volley[i].destroy();
+                                });
+                            }
+                        }catch (e){}
+                        self.buildPartsConstructor('FOOTER_VOLLEY');
+                        break;
                     default:
                 }
                 break;
@@ -980,6 +1527,9 @@ class RLTracker extends Phaser.Scene {
                         break;
                     case 4:
                         self.buildPartsConstructor('TIME_TENNIS');
+                        break;
+                    case 6:
+                        self.buildPartsConstructor('TIME_VOLLEY');
                         break;
                     default:
                 }
@@ -1041,6 +1591,19 @@ class RLTracker extends Phaser.Scene {
                         }catch (e){}
                         self.buildPartsConstructor('SCORE_TENNIS');
                         break;
+                    case 6:
+                        scoreArrived = self.EventDetails.esc.split(':');
+                        lastHScore = parseInt(self.Elements.Parts.TeamHomeScore.text);
+                        lastAScore = parseInt(self.Elements.Parts.TeamAwayScore.text);
+                        if(lastHScore !== parseInt(scoreArrived[0]) || lastAScore !== parseInt(scoreArrived[1])){
+                            console.debug("New Score Detected");
+                        }
+                        try {
+                            self.Elements.Parts.TeamHomeScore.destroy();
+                            self.Elements.Parts.TeamAwayScore.destroy();
+                        }catch (e){}
+                        self.buildPartsConstructor('SCORE_VOLLEY');
+                        break;
                 }
                 break;
         }
@@ -1067,28 +1630,727 @@ class RLTracker extends Phaser.Scene {
             case 4:
                 lblStatus = "SET "+self.EventDetails.ecp;
                 break;
-            case 5:
+            case 6:
                 lblStatus = "SET "+self.EventDetails.ecp;
                 break;
         }
         if(parseInt(self.EventDetails.ecp) === 0 || !self.EventDetails.live){
             lblStatus = 'Ended';
+            self.showImportantMessage("Match ended");
+            self.executeBallPosition(0, 0, false, false);
         }
         return lblStatus;
     }
 
     async updateEventDetails(self){
-        let Response = await self.requestExecutor("EVENT_DETAILS", {
-            opName: "GetEventDetails",
-            eventId: self.EventId
-        });
-        if(typeof Response.error !== "undefined"){
-            throw new DOMException("Error received: "+Response.error);
+        self.requestExecutor("EVENT_DETAILS");
+    }
+
+    showImportantMessage(message, team){
+        const self = this;
+        try {
+            if(self.Elements.ImportantMessage.length > 0){
+                self.Elements.ImportantMessage.forEach(function(v,i){
+                    self.Elements.ImportantMessage[i].destroy();
+                });
+            }
+        }catch (e){}
+
+        if(typeof message !== "undefined"){
+            if(typeof team === 'undefined' || team === ''){
+                let idx = 0;
+                self.Elements.ImportantMessage[idx] = self.GameThis.add.rectangle((800/2), (530/2)+40, 380, 70, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.IMPORTANT_MSG.BOX).color, 0.75);
+                self.Elements.ImportantMessage[idx].setDepth(95);
+                idx++;
+                self.Elements.ImportantMessage[idx] = self.GameThis.add.text((800/2), (530/2), message, { fontSize: '24px', fill: self.WIDGET_COLORS.IMPORTANT_MSG.TXT, fontFamily: self.WIDGET_FONT });
+                self.Elements.ImportantMessage[idx].setPosition(((800/2)-(self.Elements.ImportantMessage[idx].width/2)), (580/2));
+                self.Elements.ImportantMessage[idx].setDepth(96);
+            }else{
+                let idx = 0;
+                self.Elements.ImportantMessage[idx] = self.GameThis.add.rectangle((800/2), (530/2)+40, 380, 70, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.IMPORTANT_MSG.BOX).color, 0.75);
+                self.Elements.ImportantMessage[idx].setDepth(95);
+                idx++;
+                self.Elements.ImportantMessage[idx] = self.GameThis.add.rectangle((800/2)+150, (530/2)+40, 50, 50, Phaser.Display.Color.HexStringToColor(self.WIDGET_COLORS.IMPORTANT_MSG.MIN).color, 0.60);
+                self.Elements.ImportantMessage[idx].setDepth(96);
+                idx++;
+                self.Elements.ImportantMessage[idx] = self.GameThis.add.text((800/2)-175, (530/2)+15, message, { fontSize: '24px', fill: self.WIDGET_COLORS.IMPORTANT_MSG.TXT, fontFamily: self.WIDGET_FONT });
+                self.Elements.ImportantMessage[idx].setDepth(96);
+                idx++;
+                self.Elements.ImportantMessage[idx] = self.GameThis.add.text((800/2)-175, (530/2)+45, (team === 'home' ? self.EventDetails.th.name : team === 'away' ? self.EventDetails.ta.name : ''), { fontSize: '16px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                self.Elements.ImportantMessage[idx].setDepth(96);
+                idx++;
+                self.Elements.ImportantMessage[idx] = self.GameThis.add.text((800/2)+140, (530/2)+30, parseInt(self.EventDetails.ect/60)+"'", { fontSize: '19px', fill: self.WIDGET_COLORS.GENERIC_TEXT, fontFamily: self.WIDGET_FONT });
+                self.Elements.ImportantMessage[idx].setDepth(97);
+            }
         }
-        self.EventDetails = Response;
-        self.updatePartsConstructor("SCORE");
-        self.updatePartsConstructor("TIME");
-        self.updatePartsConstructor("STATISTICS");
+    }
+
+    countLinesCreated = 0;
+    lastTeamHaveTeam = '';
+    eventBallActive = false;
+    disableLines = false;
+    soccerBallLines = [];
+    actualTeamHaveBall='';
+    lastPercentBall = [0,0];
+    targetBallPossition;
+    targetLastBallPossition;
+    animAttackDynHome = null;
+    animAttackDynAway = null;
+
+    executeBallPosition(x,y,v,f){
+        const self = this;
+        if(parseFloat(x) > 1.05 || parseFloat(y) > 1.05){
+            this.Elements.Soccer.Ball.setVisible(false);
+            return false;
+        }
+        if(self.EventDetails.si !== 1) return false;
+
+        if(typeof f === 'undefined' || !f) self.eventBallActive = true;
+        self.lastPercentBall = [0,0];
+
+        let position_x = (678*parseFloat(x));
+        let position_x_3d = 0;
+        let position_y = (305*parseFloat(y));
+        if(parseFloat(x) > 0.5){
+            if(parseFloat(y) > 0.5){
+                position_x = (position_x+position_x_3d);
+            }else{
+                position_x = (position_x+position_x_3d);
+            }
+        }else{
+            if(parseFloat(y) > 0.5){
+                position_x = (position_x-position_x_3d);
+            }else{
+                position_x = (position_x-position_x_3d);
+            }
+        }
+        position_x = (60+position_x);
+        position_y = (150+position_y);
+        this.Elements.Soccer.Ball.setVisible(v);
+        self.targetBallPossition.x = position_x;
+        self.targetBallPossition.y = position_y;
+
+        self.GameThis.tweens.add({
+            targets: this.Elements.Soccer.Ball,
+            x: self.targetBallPossition.x,
+            y: self.targetBallPossition.y,
+            duration: 500,
+            ease: 'Cubic',
+        });
+
+        if(typeof f === 'undefined' || !f){
+            this.Elements.Soccer.BallLines[0].lineStyle(2, 0xC0C0C0).setDepth(5);
+            if(self.targetLastBallPossition.x !== 0 && self.targetLastBallPossition.y !== 0){
+                self.Elements.Soccer.BallLines[0].lineBetween(self.targetLastBallPossition.x, (self.targetLastBallPossition.y), self.targetBallPossition.x, (self.targetBallPossition.y));
+            }
+            if(self.lastTeamHaveTeam === self.actualTeamHaveBall){
+                self.countLinesCreated++;
+            }else{
+                self.countLinesCreated = 0;
+                self.Elements.Soccer.BallLines[0].clear();
+            }
+        }
+        self.lastTeamHaveTeam = self.actualTeamHaveBall;
+        if(!v || self.disableLines) {
+            self.Elements.Soccer.BallLines[0].clear();
+            self.disableLines = false;
+        }
+        self.targetLastBallPossition.x = self.targetBallPossition.x;
+        self.targetLastBallPossition.y = self.targetBallPossition.y;
+
+        if(self.actualTeamHaveBall === 'home'){
+            if(parseFloat(x) > 0.5){
+                let percentToGo = (215*parseFloat(x));
+                self.Elements.Animations[2].setX((397+percentToGo));
+            }
+        }else{
+            if(parseFloat(x) < 0.5){
+                let totalPX = 1; totalPX = (totalPX-x);
+                let percentToGo = (215*parseFloat(totalPX));
+                self.Elements.Animations[3].setX((397-percentToGo));
+            }
+        }
+    };
+
+    executeAnimations(anim_name, team){
+        const self = this;
+
+        self.Elements.Animations[0].setVisible(false);
+        self.Elements.Animations[1].setVisible(false);
+        self.Elements.Animations[2].setVisible(false);
+        self.Elements.Animations[3].setVisible(false);
+
+        self.Elements.Teams.Home[0].setVisible(false);
+        self.Elements.Teams.Home[1].setVisible(false);
+        self.Elements.Teams.Home[2].setVisible(false);
+
+        self.Elements.Teams.Away[0].setVisible(false);
+        self.Elements.Teams.Away[1].setVisible(false);
+        self.Elements.Teams.Away[2].setVisible(false);
+
+        if(team === 'home'){
+            self.Elements.Teams.Home[2].setText(anim_name.toUpperCase());
+            self.Elements.Teams.Home[2].setPosition((370-self.Elements.Teams.Home[2].width), 295);
+            self.Elements.Teams.Home[0].setVisible(true);
+            self.Elements.Teams.Home[1].setText(self.EventDetails.th.name);
+            self.Elements.Teams.Home[1].setPosition((370-self.Elements.Teams.Home[1].width), 275);
+            self.Elements.Teams.Home[1].setVisible(true);
+            self.Elements.Teams.Home[2].setVisible(true);
+        }else if(team === 'away'){
+            self.Elements.Teams.Away[2].setText(anim_name.toUpperCase());
+            self.Elements.Teams.Away[0].setVisible(true);
+            self.Elements.Teams.Away[1].setVisible(true);
+            self.Elements.Teams.Away[1].setText(self.EventDetails.ta.name);
+            self.Elements.Teams.Away[1].setPosition(430, 275);
+            self.Elements.Teams.Away[2].setVisible(true);
+        }
+
+        /*if(volleyball_items.ball !== null){
+            volleyball_items.ball.setVisible(false);
+        }
+
+        if(tennis_items.ball !== null){
+            tennis_items.ball.setVisible(false);
+        }
+
+        if(soccer_items.light !== null){
+            soccer_items.light.setVisible(false);
+            clearTimeout(timerLightAnim);
+        }*/
+
+        if(anim_name === 'safe' || anim_name === 'possession' || anim_name === 'rally') {
+            if (team === 'home') {
+                self.Elements.Animations[0].setVisible(true);
+                if(!self.eventBallActive) self.executeBallPosition(0.45, 0.5, true, true);
+            }else{
+                self.Elements.Animations[1].setVisible(true);
+                if(!self.eventBallActive) self.executeBallPosition(0.55, 0.5, true, true);
+            }
+        }else if(anim_name === 'stat') {
+            /*if(volleyball_items.ball !== null){
+                if (team == 'home') {
+                    volleyball_items.ball.angle = 180;
+                    volleyball_items.ball.setScale(1.5).setPosition(150, 360);
+                    volleyball_items.ball.setVisible(true);
+                }else{
+                    volleyball_items.ball.angle = 0;
+                    volleyball_items.ball.setScale(1.5).setPosition(650, 250);
+                    volleyball_items.ball.setVisible(true);
+                }
+
+                homeAnimationIdent[0].setVisible(false);
+                homeAnimationIdent[1].setVisible(false);
+                homeAnimationIdent[2].setVisible(false);
+                awayAnimationIdent[0].setVisible(false);
+                awayAnimationIdent[1].setVisible(false);
+                awayAnimationIdent[2].setVisible(false);
+            }else{
+                if (team == 'home') {
+                    animPossessionDynHome.setVisible(true);
+                    if(!eventBallActive) executeBallPosition(0.45, 0.5, true, true);
+                }else{
+                    animPossessionDynAway.setVisible(true);
+                    if(!eventBallActive) executeBallPosition(0.55, 0.5, true, true);
+                }
+            }*/
+        }else if(anim_name === 'serve') {
+            /*if(tennis_items.ball !== null){
+                if (team == 'home') {
+                    tennis_items.ball.angle = 180;
+                    tennis_items.ball.setScale(1.5).setPosition(150, 360);
+                    tennis_items.ball.setVisible(true);
+                }else{
+                    tennis_items.ball.angle = 0;
+                    tennis_items.ball.setScale(1.5).setPosition(650, 250);
+                    tennis_items.ball.setVisible(true);
+                }
+
+                homeAnimationIdent[0].setVisible(false);
+                homeAnimationIdent[1].setVisible(false);
+                homeAnimationIdent[2].setVisible(false);
+                awayAnimationIdent[0].setVisible(false);
+                awayAnimationIdent[1].setVisible(false);
+                awayAnimationIdent[2].setVisible(false);
+            }else{
+                if (team == 'home') {
+                    animPossessionDynHome.setVisible(true);
+                    if(!self.eventBallActive) self.executeBallPosition(0.45, 0.5, true, true);
+                }else{
+                    animPossessionDynAway.setVisible(true);
+                    if(!self.eventBallActive) self.executeBallPosition(0.55, 0.5, true, true);
+                }
+            }*/
+        }else if(anim_name === 'attack'){
+            if (team === 'home') {
+                self.Elements.Animations[2].setVisible(true);
+                if(!self.eventBallActive) self.executeBallPosition(0.65, 0.5, true, true);
+            }else{
+                self.Elements.Animations[3].setVisible(true);
+                if(!self.eventBallActive) self.executeBallPosition(0.35, 0.5, true, true);
+            }
+        }else if(anim_name === 'danger-attack'){
+            if (team === 'home') {
+                self.Elements.Animations[2].setVisible(true);
+                if(!self.eventBallActive) self.executeBallPosition(0.85, 0.5, true, true);
+            }else{
+                self.Elements.Animations[3].setVisible(true);
+                if(!self.eventBallActive) self.executeBallPosition(0.15, 0.5, true, true);
+            }
+        }else if(anim_name === 'corner' || anim_name === 'corner-bottom'){
+            if(team === 'home'){
+                if(!self.eventBallActive) self.executeBallPosition(1, 0.01, true, true);
+                else{
+                    self.Elements.Soccer.BallLines[0].clear();
+                }
+                /*timerLightAnim = setTimeout(function(){
+                    if(lastPercentBall[0] > 0.5){
+                        if(lastPercentBall[1] > 0.5){
+                            soccer_items.light.setVisible(true).setPosition(soccerBallPosition.x-22, soccerBallPosition.y-56).angle=240;
+                        }else{
+                            soccer_items.light.setVisible(true).setPosition(soccerBallPosition.x-33, soccerBallPosition.y+50).angle=115;
+                        }
+                    }
+                }, 600);*/
+            }else{
+                if(!self.eventBallActive) self.executeBallPosition(0, 0.99, true, true);
+                else{
+                    self.Elements.Soccer.BallLines[0].clear();
+                }
+                /*timerLightAnim = setTimeout(function(){
+                    if(lastPercentBall[0] < 0.5){
+                        if(lastPercentBall[1] > 0.5){
+                            soccer_items.light.setVisible(true).setPosition(soccerBallPosition.x+28, soccerBallPosition.y-50).angle=290;
+                        }else{
+                            soccer_items.light.setVisible(true).setPosition(soccerBallPosition.x+23, soccerBallPosition.y+56).angle=60;
+                        }
+                    }
+                }, 600);*/
+            }
+            self.disableLines=true;
+        }else if(anim_name === 'throw'){
+            if(team === 'home'){
+                if(!self.eventBallActive) self.executeBallPosition(0.70, 0, true, true);
+                else{
+                    self.Elements.Soccer.BallLines[0].clear();
+                }
+                /*timerLightAnim = setTimeout(function(){
+                    if(soccerBallPosition.y > 400){
+                        soccer_items.light.setVisible(true).setPosition(soccerBallPosition.x+4, soccerBallPosition.y-58).angle=266;
+                    }else{
+                        soccer_items.light.setVisible(true).setPosition(soccerBallPosition.x-7, soccerBallPosition.y+58).angle=88;
+                    }
+                },600)*/
+            }else{
+                if(!self.eventBallActive) self.executeBallPosition(0.30, 1, true, true);
+                else{
+                    self.Elements.Soccer.BallLines[0].clear();
+                }
+                /*timerLightAnim = setTimeout(function(){
+                    if(soccerBallPosition.y > 400){
+                        soccer_items.light.setVisible(true).setPosition(soccerBallPosition.x+4, soccerBallPosition.y-58).angle=266;
+                    }else{
+                        soccer_items.light.setVisible(true).setPosition(soccerBallPosition.x-7, soccerBallPosition.y+58).angle=88;
+                    }
+                },600);*/
+            }
+            self.disableLines=true;
+        }else if(anim_name === 'goal-kick'){
+            if(team === 'home'){
+                if(!self.eventBallActive) self.executeBallPosition(0.10, 0.50, true, true);
+                else{
+                    self.Elements.Soccer.BallLines[0].clear();
+                }
+
+                /*timerLightAnim = setTimeout(function(){
+                    soccer_items.light.setVisible(true).setPosition(soccerBallPosition.x+56, soccerBallPosition.y+8).angle=0;
+                }, 600);*/
+            }else{
+                if(!self.eventBallActive) self.executeBallPosition(0.90, 0.50, true, true);
+                else{
+                    self.Elements.Soccer.BallLines[0].clear();
+                }
+
+                /*timerLightAnim = setTimeout(function(){
+                    soccer_items.light.setVisible(true).setPosition(soccerBallPosition.x-56, soccerBallPosition.y-8).angle=180;
+                }, 600)*/
+            }
+            self.disableLines=true;
+        }else if(anim_name === 'safe-free-kick'){
+            if(team === 'home'){
+                if(!self.eventBallActive) self.executeBallPosition(0.40, 0.5, true, true);
+                else{
+                    self.Elements.Soccer.BallLines[0].clear();
+                }
+
+                /*timerLightAnim = setTimeout(function(){
+                    soccer_items.light.setVisible(true).setPosition(soccerBallPosition.x+56, soccerBallPosition.y+8).angle=0;
+                }, 600);*/
+            }else{
+                if(!self.eventBallActive) self.executeBallPosition(0.60, 0.50, true, true);
+                else{
+                    self.Elements.Soccer.BallLines[0].clear();
+                }
+
+                /*timerLightAnim = setTimeout(function(){
+                    soccer_items.light.setVisible(true).setPosition(soccerBallPosition.x-56, soccerBallPosition.y-8).angle=180;
+                }, 600)*/
+            }
+            self.disableLines=true;
+        }else if(anim_name === 'danger-free-kick'){
+            if(team === 'home'){
+                if(!self.eventBallActive) self.executeBallPosition(0.65, 0.50, true, true);
+                else{
+                    self.Elements.Soccer.BallLines[0].clear();
+                }
+
+                /*timerLightAnim = setTimeout(function(){
+                    soccer_items.light.setVisible(true).setPosition(soccerBallPosition.x+56, soccerBallPosition.y+8).angle=0;
+                }, 600);*/
+            }else{
+                if(!self.eventBallActive) self.executeBallPosition(0.35, 0.50, true, true);
+                else{
+                    self.Elements.Soccer.BallLines[0].clear();
+                }
+
+                /*timerLightAnim = setTimeout(function(){
+                    soccer_items.light.setVisible(true).setPosition(soccerBallPosition.x-56, soccerBallPosition.y-8).angle=180;
+                }, 600)*/
+            }
+            self.disableLines=true;
+        }else if(anim_name === 'shot-on-target'){
+            if(team === 'home'){
+
+            }else{
+
+            }
+            self.disableLines=true;
+        }else if(anim_name === 'shot-off-target'){
+            if(team === 'home'){
+
+            }else{
+
+            }
+            self.disableLines=true;
+        }
+    };
+
+    startWSCommunication(){
+        const self = this;
+        self.WSClient = io.connect(self.WebSocket, {
+            forceNew: true
+        });
+        self.WSClient.on('connect', function(data) {
+            self.requestExecutor("CHECK_CLIENT");
+        });
+        self.WSClient.on('verified', function(data) {
+            self.buildPartsConstructor('CLEAR');
+            self.requestExecutor("READY");
+            self.eventExecutor();
+        });
+        self.WSClient.on('constructor', function(data) {
+            self.EventDetails = data.message;
+            self.eventExecutor();
+            self.showImportantMessage();
+            clearInterval(self.EventUpdate);
+            self.EventUpdate = setInterval(self.updateEventDetails, 5000, self);
+        });
+        self.WSClient.on('event_details', function(data) {
+            self.EventDetails = data.message;
+            self.updatePartsConstructor("SCORE");
+            self.updatePartsConstructor("TIME");
+            self.updatePartsConstructor("STATISTICS");
+        });
+        self.WSClient.on('update_event', function(data) {
+
+            self.showImportantMessage();
+
+            if(data.Team !== '') self.actualTeamHaveBall = data.Team;
+
+            if(self.EventDetails.si === 1){
+                if(data.BallPosition.length > 0){
+                    //console.debug("Execute ball position", data.BallPosition[0], data.BallPosition[1]);
+                    self.executeBallPosition(data.BallPosition[0], data.BallPosition[1], true, false);
+                }
+            }
+
+            if(data.Action !== '' && data.Team !== ''){
+
+                switch (data.Action) {
+                    case "danger-attack":
+                        self.executeAnimations("danger-attack", data.Team);
+                        break;
+                    case "attack":
+                        self.executeAnimations("attack", data.Team);
+                        break;
+                    case "possession":
+                        self.executeAnimations("possession", data.Team);
+                        break;
+                    case "corner":
+                        self.executeAnimations("corner", data.Team);
+                        self.Elements.Soccer.BallLines[0].clear();
+                        break;
+                    case "yellow-card":
+                        self.Elements.Soccer.BallLines[0].clear();
+                        self.showImportantMessage("Yellow card", data.Team);
+                        break;
+                    case "red-card":
+                        self.Elements.Soccer.BallLines[0].clear();
+                        self.showImportantMessage("Red card", data.Team);
+                        break;
+                    case "goal-kick":
+                        self.executeAnimations("goal-kick", data.Team);
+                        self.Elements.Soccer.BallLines[0].clear();
+                        break;
+                    case "throw":
+                        self.executeAnimations("throw", data.Team);
+                        self.Elements.Soccer.BallLines[0].clear();
+                        break;
+                    case "substitution":
+                        self.executeAnimations('', '');
+                        self.Elements.Soccer.BallLines[0].clear();
+                        self.showImportantMessage("Substitution", data.Team);
+                        break;
+                    case "kickoff":
+                        self.Elements.Soccer.BallLines[0].clear();
+                        self.showImportantMessage("Kickoff", data.Team);
+                        break;
+                    case "halftime":
+                        self.executeAnimations('', '');
+                        self.Elements.Soccer.BallLines[0].clear();
+                        self.showImportantMessage("Halftime");
+                        break;
+                    case "secound-half":
+                        self.executeAnimations('', '');
+                        self.Elements.Soccer.BallLines[0].clear();
+                        self.showImportantMessage("Secound Half");
+                        break;
+                    case "fulltime":
+                        self.executeAnimations('', '');
+                        self.Elements.Soccer.BallLines[0].clear();
+                        self.showImportantMessage("Fulltime");
+                        break;
+                    case "extra-time-1":
+                    case "extra-time-ht":
+                    case "extra-time-2":
+                        self.showImportantMessage("Extra time");
+                        break;
+                    case "extra-time-ended":
+                        self.showImportantMessage("Extra time ended");
+                        break;
+                    case "penalty-shoot":
+                        self.showImportantMessage("Penalty shoot", data.Team);
+                        break;
+                    case "penalty-missing":
+                        self.showImportantMessage("Penalty missing", data.Team);
+                        break;
+                    case "injury":
+                        self.Elements.Soccer.BallLines[0].clear();
+                        self.showImportantMessage("Injury", data.Team);
+                        break;
+                    case "injury-time":
+                        self.showImportantMessage("Injury time");
+                        break;
+                    case "shot-on-target":
+                        self.executeAnimations("shot-on-target", data.Team);
+                        break;
+                    case "safe-free-kick":
+                        self.executeAnimations("safe-free-kick", data.Team);
+                        break;
+                    case "danger-free-kick":
+                        self.executeAnimations("danger-free-kick", data.Team);
+                        break;
+                    case "offside":
+                        self.executeAnimations('', '');
+                        self.Elements.Soccer.BallLines[0].clear();
+                        self.showImportantMessage("Offside", data.Team);
+                        break;
+                    case "goal":
+                        self.Elements.Soccer.BallLines[0].clear();
+                        self.showImportantMessage("Goal", data.Team);
+                        break;
+                    case "penalty-take":
+                        self.showImportantMessage("Penalty Take", data.Team);
+                        break;
+                    case "penalty-scored":
+                        self.showImportantMessage("Penalty Scored", data.Team);
+                        break;
+                    case "match-ended":
+                        self.executeAnimations('', '');
+                        self.showImportantMessage("Match ended");
+                        self.executeBallPosition(0, 0, false, false);
+                        self.Elements.Soccer.BallLines[0].clear();
+                        break;
+                    case "penalty":
+                        self.showImportantMessage("Penalty", data.Team);
+                        break;
+                    case "penalty-overplay":
+                        self.showImportantMessage("Penalty Overplay", data.Team);
+                        break;
+                    case "shot":
+                        self.showImportantMessage("Shot", data.Team);
+                        break;
+                    case "penalty-shot":
+                        self.showImportantMessage("Penalty Shot", data.Team);
+                        break;
+                    case "penalty-shot-missed":
+                        self.showImportantMessage("Penalty Shot Missed", data.Team);
+                        break;
+                    case "pulled-keeper":
+                        self.showImportantMessage("Pulled Keeper", data.Team);
+                        break;
+                    case "keeper-back-in-goal":
+                        self.showImportantMessage("Keeper Back In Goal", data.Team);
+                        break;
+                    case "faceoff":
+                        self.showImportantMessage("Faceoff", data.Team);
+                        break;
+                    case "puck-dropped":
+                        self.showImportantMessage("Puck Dropped", data.Team);
+                        break;
+                    case "faceoff-winner":
+                        self.showImportantMessage("Faceoff Winner", data.Team);
+                        break;
+                    case "event-timeout":
+                        self.showImportantMessage("Event timeout", data.Team);
+                        break;
+                    case "icing":
+                        self.showImportantMessage("Icing", data.Team);
+                        break;
+                    case "powerplay":
+                        self.showImportantMessage("Powerplay", data.Team);
+                        break;
+                    case "1-pts":
+                        self.showImportantMessage("+1 PTS", data.Team);
+                        break;
+                    case "2-pts":
+                        self.showImportantMessage("+2 PTS", data.Team);
+                        break;
+                    case "3-pts":
+                        self.showImportantMessage("+3 PTS", data.Team);
+                        break;
+                    case "freethrow":
+                        self.showImportantMessage("Freethrow", data.Team);
+                        break;
+                    case "freethrow-scored":
+                        self.showImportantMessage("Freethrow Scored", data.Team);
+                        break;
+                    case "freethrow-missed":
+                        self.showImportantMessage("Freethrow Missed", data.Team);
+                        break;
+                    case "throw-missed":
+                        self.showImportantMessage("Throw Missed", data.Team);
+                        break;
+                    case "timeout":
+                        self.showImportantMessage("Timeout");
+                        break;
+                    case "quarter-end":
+                        self.executeAnimations('', '');
+                        self.showImportantMessage("Quarter end");
+                        break;
+                    case "half-end":
+                        self.executeAnimations('', '');
+                        self.showImportantMessage("Half end");
+                        break;
+                    case "overtime":
+                        self.showImportantMessage("Overtime");
+                        break;
+                    case "foul":
+                        self.showImportantMessage("Foul", data.Team);
+                        break;
+                    case "quarter-1":
+                        self.showImportantMessage("Quarter 1");
+                        break;
+                    case "quarter-2":
+                        self.showImportantMessage("Quarter 2");
+                        break;
+                    case "quarter-3":
+                        self.showImportantMessage("Quarter 3");
+                        break;
+                    case "quarter-4":
+                        self.showImportantMessage("Quarter 4");
+                        break;
+                    case "half-first":
+                        self.showImportantMessage("Half first");
+                        break;
+                    case "half-second":
+                        self.showImportantMessage("Half second");
+                        break;
+                    case "serve":
+
+                        break;
+                    case "point-scored":
+                        self.showImportantMessage("Point Scored", data.Team);
+                        break;
+                    case "fault":
+                        self.showImportantMessage("Fault", data.Team);
+                        break;
+                    case "game":
+                        self.showImportantMessage("Game", data.Team);
+                        break;
+                    case "doble-fault":
+                        self.showImportantMessage("Doble Fault", data.Team);
+                        break;
+                    case "break-points":
+                        self.showImportantMessage("Break Points", data.Team);
+                        break;
+                    case "stat":
+                        self.showImportantMessage("Stat", data.Team);
+                        break;
+                    case "let-1st-serve":
+                        self.showImportantMessage("Let 1st Serve", data.Team);
+                        break;
+                    case "let-2nd-serve":
+                        self.showImportantMessage("Let 2nd Serve", data.Team);
+                        break;
+                    case "game-set-match":
+                        self.showImportantMessage("Game Set Match", data.Team);
+                        break;
+                    case "end-of-set":
+                        self.showImportantMessage("End Of Set", data.Team);
+                        break;
+                    case "tie-break":
+                        self.showImportantMessage("Tie Break", data.Team);
+                        break;
+                    case "rain-delay":
+                        self.showImportantMessage("Rain Delay");
+                        break;
+                    case "second-set":
+                        self.showImportantMessage("Second Set");
+                        break;
+                    case "third-set":
+                        self.showImportantMessage("Third Set");
+                        break;
+                    case "fourth-set":
+                        self.showImportantMessage("Fourth Set");
+                        break;
+                    case "final-set":
+                        self.showImportantMessage("Final Set");
+                        break;
+                    case "rally":
+                        self.showImportantMessage("Rally");
+                        break;
+                    case "?-timeout":
+                        self.showImportantMessage("? Timeout");
+                        break;
+                    case "golden-set":
+                        self.showImportantMessage("Golden Set");
+                        break;
+                    default:
+                        break;
+                }
+            }
+        });
+        self.WSClient.on('error_msg', function(data) {
+            if(typeof data.message !== 'undefined'){
+                console.error(data.message);
+            }
+        });
+        self.WSClient.on('disconnect', function(reason) {
+            // TODO: create disconnected message
+        });
+        self.WSClient.on('reconnect', function(attemptNumber) {
+            // TODO: create reconnecting message
+        });
     }
 
     async initTracker(settings){
@@ -1104,12 +2366,14 @@ class RLTracker extends Phaser.Scene {
             }else{
                 this.EventId = settings.match_id;
             }
-            let Response = await this.requestExecutor("EVENT_DETAILS", {
-                opName: "GetEventDetails",
-                eventId: this.EventId
-            });
-            if(typeof Response.error !== "undefined"){
-                throw new DOMException("Error received: "+Response.error);
+            if(typeof settings.options !== 'undefined'){
+                this.WIDGET_OPTIONS = {...this.WIDGET_OPTIONS, ...settings.options}
+            }
+            if(typeof settings.colors !== 'undefined'){
+                this.WIDGET_COLORS = {...this.WIDGET_COLORS, ...settings.colors}
+            }
+            if(typeof settings.font !== 'undefined'){
+                this.WIDGET_FONT = settings.font
             }
             this.EventDetails = Response;
         }
@@ -1120,11 +2384,16 @@ class RLTracker extends Phaser.Scene {
         }
         if(this.GameThis === null){
             this.GamePhaser = new Phaser.Game(this.ConfigPhaser);
+            this.targetBallPossition = new Phaser.Math.Vector2();
+            this.targetLastBallPossition = new Phaser.Math.Vector2();
         }else{
             this.buildPartsConstructor('CLEAR');
             this.eventExecutor();
         }
-        clearInterval(this.EventUpdate);
-        this.EventUpdate = setInterval(this.updateEventDetails, 5000, this);
+        if(this.WSClient === null){
+            this.startWSCommunication();
+        }else{
+            this.requestExecutor("CHECK_CLIENT");
+        }
     }
 }

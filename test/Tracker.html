@@ -14,16 +14,15 @@
             background: #2a2a2a;
         }
         .rl-demo {
-            width: 1200px;
+            width: 100%;
             margin: 15px auto;
             color: #fff;
         }
-        .rl-demo #tracker {
-            width: 400px;
-        }
-        .rl-demo #tracker > canvas {
+        .rl-demo #tracker2 {
             width: 100%;
-            background: #111;
+        }
+        .rl-demo #tracker2 > canvas {
+            width: 100%;
         }
     </style>
 </head>
@@ -36,17 +35,51 @@
 
     <script type="text/javascript" src="//player.redline.click/media/js/socket.io.min.js"></script>
     <script type="text/javascript" src="//trkt.weibcon.com/media/js/phaser.min.js"></script>
-    <script type="text/javascript" src="http://localhost:8000/"></script>
+    <script type="text/javascript" src="http://localhost:8899/"></script>
     <script>
-        /*let Tracker = new RLTracker();
-        Tracker.initTracker({
+        let Tracker2 = new RLTracker();
+        /*Tracker.initTracker({
             match_id: "3eb06e3cf25f7113c482900d9526019b3c76990d3f146f3d6aa7f32fb9af6c40",
             container: "tracker"
         });*/
-        let Tracker2 = new RLTracker();
         Tracker2.initTracker({
-            match_id: 3484218,
-            container: "tracker2"
+            match_id: 3610126,
+            container: "tracker2",
+            options: {
+                BACKGROUND_TRANSPARENT: true
+            },
+            colors: {
+                TEAM_HOME:      "#fff90d",
+                TEAM_AWAY:      "#fc002f",
+                HEADER_LINE:    "#DCDCDC",
+                TIMEBG:         "#004900",
+                TIMEBG_TEXT:    "#00cb00",
+                TIMEBG_S2:      "#4597cb",
+                TIMEBG_TEXT_S2: "#FFFFFF",
+                TIMEBG_S3:      "#71350A",
+                TIMEBG_TEXT_S3: "#FFFFFF",
+                TIMEBG_S4:      "#114174",
+                TIMEBG_TEXT_S4: "#FFFFFF",
+                GENERIC_TEXT:   "#FFFFFF",
+                GENERIC_TEXT_2ND:"#b1b1b1",
+                LIGHT_TEXT:     "#fff90d",
+                TIMEBG_S6:      "#e16a11",
+                BALL_COLOR:     "#ffffff",
+                CHART_CIRCLE: {
+                    TRACK:      "#fff90d",
+                    BAR:        "#fc002f",
+                    BG:         "#2a2a2a"
+                },
+                PROGRESS_BAR: {
+                    BG:         "#fc002f",
+                    LG:         "#fff90d"
+                },
+                IMPORTANT_MSG: {
+                    BOX:        "#fc002f",
+                    MIN:        "#751357",
+                    TXT:        "#FFFFFF",
+                }
+            }
         });
     </script>
 </body>
