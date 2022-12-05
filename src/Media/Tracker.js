@@ -1,4 +1,7 @@
-class RLTracker extends Phaser.Scene {
+const io = require('socket.io-client');
+const Phaser = require('phaser');
+
+export class RLTracker extends Phaser.Scene {
 
     constructor ()
     {
