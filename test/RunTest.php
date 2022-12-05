@@ -11,5 +11,6 @@ if($Adapter!==null){
     $Adapter->setPartner('redline-demo');
     $Adapter->setStructure('demo');
     $Adapter->setApiPath('http://localhost/');
+    $Adapter->setWSServer('//localhost:8095/');
     echo $Adapter->getJavascript();
 }else return '/* FILE NOT FOUND */';

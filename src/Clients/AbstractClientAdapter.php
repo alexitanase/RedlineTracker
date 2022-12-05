@@ -7,6 +7,7 @@ abstract class AbstractClientAdapter implements ClientAdapterInterface {
     protected string $Partner = '';
     protected string $PartnerLogo = '';
     protected string $Structure = '';
+    protected string $WSServer = '';
     protected array  $Options = [];
     protected string $MediaPath = __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'Media'.DIRECTORY_SEPARATOR;
     protected $ApiPath = '';
@@ -74,13 +75,30 @@ abstract class AbstractClientAdapter implements ClientAdapterInterface {
     public function setOption(string $name, $value){
         $this->Options[$name] = $value;
     }
+
+    /**
+     * @return string
+     */
+    public function getWSServer(): string
+    {
+        return $this->WSServer;
+    }
+
+    /**
+     * @param string $WSServer
+     */
+    public function setWSServer(string $WSServer): void
+    {
+        $this->WSServer = $WSServer;
+    }
     
     protected function getOptions(): array {
         $base = [
             "%PARTNER_NAME%"    => $this->Partner,
             "%PARTNER_LOGO%"    => $this->PartnerLogo,
             "%STRUCTURE_NAME%"  => $this->Structure,
-            "%API_PATH%"        => $this->ApiPath
+            "%API_PATH%"        => $this->ApiPath,
+            "%WS_SERVER%"       => $this->WSServer
         ];
         $allOptions = [$base, ...$this->Options];
         return $allOptions;

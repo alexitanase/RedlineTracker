@@ -14,7 +14,7 @@ class RLTracker extends Phaser.Scene {
     APIPath     = '%API_PATH%';
 
     //WebSocket Server
-    WebSocket   = "//127.0.0.1:8095/";
+    WebSocket   = "%WS_SERVER%";
     WSClient    = null;
 
     //Media Server
